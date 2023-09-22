@@ -2,6 +2,8 @@ using MongoDB.Driver.Encryption;
 using Play.Common.Repositories;
 using Play.Inventory.Service.Clients;
 using Play.Inventory.Service.Entities;
+using Polly;
+using Polly.Timeout;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,8 +14,13 @@ builder.Services.AddMongo()
 builder.Services.AddHttpClient<CatalogClient>(client =>
     {
         client.BaseAddress = new Uri("https://localhost:7003");
-    }
-);
+    })
+    .AddTransientHttpErrorPolicy(x => x.Or<TimeoutRejectedException>()
+        .WaitAndRetryAsync(5, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt))))
+    .AddTransientHttpErrorPolicy(x => x.Or<TimeoutRejectedException>()
+        .CircuitBreakerAsync(3, TimeSpan.FromSeconds(15)))
+    .AddPolicyHandler(Policy.TimeoutAsync<HttpResponseMessage>(1));
+
 
 
 builder.Services.AddControllers();
